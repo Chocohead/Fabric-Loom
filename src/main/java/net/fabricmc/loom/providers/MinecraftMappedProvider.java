@@ -35,6 +35,7 @@ import org.gradle.api.Project;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.io.Files;
 
+import net.fabricmc.loom.AbstractPlugin;
 import net.fabricmc.loom.LoomGradleExtension;
 import net.fabricmc.loom.dependencies.DependencyProvider;
 import net.fabricmc.loom.dependencies.LogicalDependencyProvider;
@@ -99,7 +100,14 @@ public class MinecraftMappedProvider extends LogicalDependencyProvider {
         String intermediaryJar = minecraftProvider.minecraftVersion + "-intermediary" + atOffset + '-' + mappingsProvider.mappingsName;
         MINECRAFT_INTERMEDIARY_JAR = new File(cache, "minecraft-" + intermediaryJar + ".jar");
         String mappedJar = minecraftProvider.minecraftVersion + "-mapped" + atOffset + '-' + mappingsProvider.mappingsName + '-' + mappingsProvider.mappingsVersion;
-        MINECRAFT_MAPPED_JAR = new File(cache, "minecraft-" + mappedJar + ".jar");
+
+        // Create version directory, see modmuss50/fabric-loom@83d2741d and modmuss50/fabric-loom@01dda726
+        File versionDirectory = new File(cache, mappedJar);
+        if (!versionDirectory.exists()) {
+            versionDirectory.mkdir();
+        }
+
+        MINECRAFT_MAPPED_JAR = new File(versionDirectory, "minecraft-" + mappedJar + ".jar");
 
         if (!getMappedJar().exists() || !getIntermediaryJar().exists() || atChange) {
             if (getMappedJar().exists()) {
@@ -117,6 +125,7 @@ public class MinecraftMappedProvider extends LogicalDependencyProvider {
             throw new RuntimeException("mapped jar not found");
         }
 
+        AbstractPlugin.addDirectoryRepo(project, "UserMinecraftMapped", versionDirectory);
         addDependency("net.minecraft:minecraft:" + mappedJar, project, Constants.MINECRAFT_NAMED);
         addDependency("net.minecraft:minecraft:" + intermediaryJar, project, Constants.MINECRAFT_INTERMEDIARY);
     }
