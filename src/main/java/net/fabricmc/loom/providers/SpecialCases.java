@@ -379,6 +379,9 @@ class SpecialCases {
 		case "b1.7.3":
 			return "https://gist.githubusercontent.com/Chocohead/b7ea04058776495a93ed2d13f34d697a/raw/Beta 1.7.3 Merge.tiny".replace(" ", "%20");
 
+		case "1.8.9":
+			return "https://github.com/Legacy-Fabric/Legacy-Intermediaries/raw/master/mappings/1.8.9.tiny";
+		
 		default:
 			return "https://github.com/FabricMC/intermediary/raw/master/mappings/" + UrlEscapers.urlPathSegmentEscaper().escape(version) + ".tiny";
 		}
