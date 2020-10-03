@@ -26,8 +26,13 @@ package net.fabricmc.loom.util;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 
 import org.cadixdev.lorenz.MappingSet;
 import org.cadixdev.lorenz.io.MappingsReader;
@@ -35,6 +40,8 @@ import org.cadixdev.mercury.Mercury;
 import org.cadixdev.mercury.remapper.MercuryRemapper;
 
 import org.gradle.api.Project;
+import org.gradle.api.logging.Logger;
+
 import org.zeroturnaround.zip.ZipUtil;
 
 import net.fabricmc.loom.LoomGradleExtension;
@@ -44,30 +51,38 @@ import net.fabricmc.mappings.EntryTriple;
 import net.fabricmc.mappings.FieldEntry;
 import net.fabricmc.mappings.Mappings;
 import net.fabricmc.mappings.MethodEntry;
+import net.fabricmc.stitch.util.Pair;
 import net.fabricmc.stitch.util.StitchUtil;
 
 
 public class SourceRemapper {
-	public static void remapSources(Project project, File source, File destination, boolean toNamed) throws Exception {
-		remapSourcesInner(project, source, destination, toNamed);
+	private static final Map<TinyReader, MappingSet> MAPPING_CACHE = new HashMap<>();
+
+	public static void remapSources(Project project, File source, File destination, boolean toNamed) throws IOException {
+		remapSources(project, Collections.singleton(Pair.of(source, destination)), toNamed);
+	}
+
+	public static void remapSources(Project project, Iterable<Pair<File, File>> remapQueue, boolean toNamed) throws IOException {
+		remapSourcesInner(project, remapQueue, toNamed);
 		// TODO: FIXME - WORKAROUND https://github.com/FabricMC/fabric-loom/issues/45
 		System.gc();
 	}
 
-	private static void remapSourcesInner(Project project, File source, File destination, boolean toNamed) throws Exception {
+	private static void remapSourcesInner(Project project, Iterable<Pair<File, File>> remapQueue, boolean toNamed) throws IOException {
 		LoomGradleExtension extension = project.getExtensions().getByType(LoomGradleExtension.class);
 		MappingsProvider mappingsProvider = extension.getMappingsProvider();
 
-		@SuppressWarnings("resource") //Doesn't need closing as TinyRemapper doesn't do anything in Closeable#close
-		MappingSet mappings = extension.getOrCreateSrcMappingCache(toNamed ? 1 : 0, () -> {
-			try {
-				Mappings m = mappingsProvider.getMappings();
-				project.getLogger().lifecycle(":loading " + (toNamed ? "intermediary -> named" : "named -> intermediary") + " source mappings");
-				return new TinyReader(m, toNamed ? "intermediary" : "named", toNamed ? "named" : "intermediary").read();
-			} catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-		});
+		MappingSet mappings;
+		try (TinyReader key = new TinyReader(mappingsProvider, toNamed ? "intermediary" : "named", toNamed ? "named" : "intermediary")) {
+			mappings = MAPPING_CACHE.computeIfAbsent(key, reader -> {
+				try {
+					project.getLogger().lifecycle(":loading {} source mappings", toNamed ? "intermediary -> named" : "named -> intermediary");
+					return reader.read();
+				} catch (IOException e) {
+					throw new UncheckedIOException("Error reading mappings from " + reader, e);
+				}
+			});
+		}
 
 		project.getLogger().info(":remapping source jar");
 
@@ -88,57 +103,62 @@ public class SourceRemapper {
 			return m;
 		});
 
-		if (source.equals(destination)) {
-			if (source.isDirectory()) {
-				throw new RuntimeException("Directories must differ!");
+		for (Pair<File, File> task : remapQueue) {
+			File source = task.getLeft();
+			File destination = task.getRight();
+
+			if (source.equals(destination)) {
+				if (source.isDirectory()) {
+					throw new RuntimeException("Directories must differ!");
+				}
+
+				source = new File(destination.getAbsolutePath().substring(0, destination.getAbsolutePath().lastIndexOf('.')) + "-dev.jar");
+
+				try {
+					com.google.common.io.Files.move(destination, source);
+				} catch (IOException e) {
+					throw new RuntimeException("Could not rename " + destination.getName() + "!", e);
+				}
 			}
 
-			source = new File(destination.getAbsolutePath().substring(0, destination.getAbsolutePath().lastIndexOf('.')) + "-dev.jar");
+			Path srcPath = source.toPath();
+			boolean isSrcTmp = false;
+
+			if (!source.isDirectory()) {
+				// create tmp directory
+				isSrcTmp = true;
+				srcPath = Files.createTempDirectory("fabric-loom-src");
+				ZipUtil.unpack(source, srcPath.toFile());
+			}
+
+			if (!destination.isDirectory() && destination.exists()) {
+				if (!destination.delete()) {
+					throw new RuntimeException("Could not delete " + destination.getName() + "!");
+				}
+			}
+
+			StitchUtil.FileSystemDelegate dstFs = destination.isDirectory() ? null : StitchUtil.getJarFileSystem(destination, true);
+			Path dstPath = dstFs != null ? dstFs.get().getPath("/") : destination.toPath();
 
 			try {
-				com.google.common.io.Files.move(destination, source);
-			} catch (IOException e) {
-				throw new RuntimeException("Could not rename " + destination.getName() + "!", e);
+				mercury.rewrite(srcPath, dstPath);
+			} catch (Exception e) {
+				project.getLogger().warn("Could not remap " + source.getName() + " fully!", e);
 			}
-		}
 
-		Path srcPath = source.toPath();
-		boolean isSrcTmp = false;
+			copyNonJavaFiles(srcPath, dstPath, project.getLogger(), source);
 
-		if (!source.isDirectory()) {
-			// create tmp directory
-			isSrcTmp = true;
-			srcPath = Files.createTempDirectory("fabric-loom-src");
-			ZipUtil.unpack(source, srcPath.toFile());
-		}
-
-		if (!destination.isDirectory() && destination.exists()) {
-			if (!destination.delete()) {
-				throw new RuntimeException("Could not delete " + destination.getName() + "!");
+			if (dstFs != null) {
+				dstFs.close();
 			}
-		}
 
-		StitchUtil.FileSystemDelegate dstFs = destination.isDirectory() ? null : StitchUtil.getJarFileSystem(destination, true);
-		Path dstPath = dstFs != null ? dstFs.get().getPath("/") : destination.toPath();
-
-		try {
-			mercury.rewrite(srcPath, dstPath);
-		} catch (Exception e) {
-			project.getLogger().warn("Could not remap " + source.getName() + " fully!", e);
-		}
-
-		copyNonJavaFiles(srcPath, dstPath, project, source);
-
-		if (dstFs != null) {
-			dstFs.close();
-		}
-
-		if (isSrcTmp) {
-			Files.walkFileTree(srcPath, new DeletingFileVisitor());
+			if (isSrcTmp) {
+				Files.walkFileTree(srcPath, new DeletingFileVisitor());
+			}
 		}
 	}
 
-	private static void copyNonJavaFiles(Path from, Path to, Project project, File source) throws IOException {
+	private static void copyNonJavaFiles(Path from, Path to, Logger logger, File source) throws IOException {
 		Files.walk(from).forEach(path -> {
 			Path targetPath = to.resolve(from.relativize(path).toString());
 
@@ -146,7 +166,7 @@ public class SourceRemapper {
 				try {
 					Files.copy(path, targetPath);
 				} catch (IOException e) {
-					project.getLogger().warn("Could not copy non-java sources '" + source.getName() + "' fully!", e);
+					logger.warn("Could not copy non-java sources '" + source.getName() + "' fully!", e);
 				}
 			}
 		});
@@ -174,18 +194,20 @@ public class SourceRemapper {
 		return name.endsWith(".java") && name.length() != 5;
 	}
 
-	public static class TinyReader extends MappingsReader {
-		private final Mappings m;
+	private static class TinyReader extends MappingsReader {
+		private final MappingsProvider provider;
 		private final String from, to;
 
-		public TinyReader(Mappings m, String from, String to) {
-			this.m = m;
+		public TinyReader(MappingsProvider provider, String from, String to) {
+			this.provider = provider;
 			this.from = from;
 			this.to = to;
 		}
 
 		@Override
-		public MappingSet read(final MappingSet mappings) {
+		public MappingSet read(final MappingSet mappings) throws IOException {
+			Mappings m = provider.getMappings();
+
 			for (ClassEntry entry : m.getClassEntries()) {
 				mappings.getOrCreateClassMapping(entry.get(from))
 						.setDeobfuscatedName(entry.get(to));
@@ -214,5 +236,24 @@ public class SourceRemapper {
 
 		@Override
 		public void close() { }
+
+		@Override
+		public String toString() {
+			return provider.MAPPINGS_TINY.getName() + '[' + from + " => " + to + ']';
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(provider.MAPPINGS_TINY, from, to);
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) return true;
+			if (!(obj instanceof TinyReader)) return false;
+
+			TinyReader that = (TinyReader) obj;
+			return Objects.equals(from, that.from) && Objects.equals(to, that.to) && Objects.equals(provider.MAPPINGS_TINY, that.provider.MAPPINGS_TINY);
+		}
 	}
 }

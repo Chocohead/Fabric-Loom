@@ -133,7 +133,7 @@ public class ArtifactInfo {
 	}
 
 	public Optional<File> getSources() {
-		@SuppressWarnings("unchecked")
+		@SuppressWarnings("unchecked") //Following what IdeDependencyResult#resolveAuxiliaryArtifacts does
 		ArtifactResolutionQuery query = depHandler.createArtifactResolutionQuery().forComponents(identifier).withArtifacts(JvmLibrary.class, SourcesArtifact.class);
 
 		for (ComponentArtifactsResult result : query.execute().getResolvedComponents()) {

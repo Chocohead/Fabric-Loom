@@ -249,7 +249,7 @@ public class MinecraftProvider extends PhysicalDependencyProvider implements Min
 	}
 
 	@Override
-	public void provide(DependencyInfo dependency, Project project, LoomGradleExtension extension, Consumer<Runnable> postPopulationScheduler) throws Exception {
+	protected void provide(DependencyInfo dependency, Project project, LoomGradleExtension extension, Consumer<Runnable> postPopulationScheduler) throws Exception {
 		minecraftVersion = dependency.getDependency().getVersion();
 
 		VersionKey key = extension.customManifest != null ? VersionKey.forManifest(extension.customManifest) : VersionKey.forVersion(minecraftVersion, extension.hasOptiFine());

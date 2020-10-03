@@ -87,7 +87,7 @@ public class RemapJarTask extends Jar {
 
 		TinyRemapper.Builder remapperBuilder = TinyRemapper.newRemapper();
 
-		remapperBuilder = remapperBuilder.withMappings(TinyRemapperMappingsHelper.create(mappingsProvider.getMappings(), fromM, toM, false));
+		remapperBuilder = remapperBuilder.withMappings(TinyRemapperMappingsHelper.create(extension, mappingsProvider.getMappings(), fromM, toM));
 		remapperBuilder.ignoreConflicts(extension.shouldBulldozeMappings());
 
 		if (mixinMapFile.exists()) {

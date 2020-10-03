@@ -27,8 +27,11 @@ package net.fabricmc.loom.dependencies;
 import java.io.File;
 import java.util.Collections;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.gradle.api.Project;
+
+import net.fabricmc.loom.LoomGradleExtension;
 
 public abstract class DependencyProvider {
 	private LoomDependencyManager dependencyManager;
@@ -54,6 +57,11 @@ public abstract class DependencyProvider {
 	public Set<Class<? extends DependencyProvider>> getDependents() {
 		return Collections.emptySet();
 	}
+
+	protected abstract String getType();
+
+	/** Perform whatever action this needs once the dependencies have run and are all satisfied */
+	public abstract void provide(Project project, LoomGradleExtension extension, Consumer<Runnable> postPopulationScheduler) throws Exception;
 
 	protected <T extends DependencyProvider> T getProvider(Class<T> type) {
 		T provider = getDependencyManager().getProvider(type);

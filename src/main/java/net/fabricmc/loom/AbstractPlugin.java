@@ -26,11 +26,17 @@ package net.fabricmc.loom;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import groovy.util.Node;
 
@@ -55,13 +61,17 @@ import org.gradle.api.tasks.scala.ScalaCompile;
 import org.gradle.plugins.ide.eclipse.model.EclipseModel;
 import org.gradle.plugins.ide.idea.model.IdeaModel;
 
+import org.objectweb.asm.Type;
+
+import net.fabricmc.loom.YarnGithubResolver.MappingContainer;
 import net.fabricmc.loom.dependencies.LoomDependencyManager;
 import net.fabricmc.loom.dependencies.RemappedConfigurationEntry;
 import net.fabricmc.loom.providers.LaunchProvider;
-import net.fabricmc.loom.providers.MappedModsProvider;
+import net.fabricmc.loom.providers.MappedModsCollectors;
 import net.fabricmc.loom.providers.MinecraftMappedProvider;
 import net.fabricmc.loom.providers.MinecraftProvider;
 import net.fabricmc.loom.providers.StackedMappingsProvider;
+import net.fabricmc.loom.providers.mappings.TinyWriter;
 import net.fabricmc.loom.task.RemapJarTask;
 import net.fabricmc.loom.task.RemapSourcesJarTask;
 import net.fabricmc.loom.task.fernflower.FernFlowerTask;
@@ -70,6 +80,7 @@ import net.fabricmc.loom.util.Constants;
 import net.fabricmc.loom.util.GroovyXmlUtil;
 import net.fabricmc.loom.util.NestedJars;
 import net.fabricmc.loom.util.SetupIntelijRunConfigs;
+import net.fabricmc.mappings.EntryTriple;
 
 public class AbstractPlugin implements Plugin<Project> {
 	protected Project project;
@@ -191,6 +202,110 @@ public class AbstractPlugin implements Plugin<Project> {
 							"-AdefaultObfuscationEnv=named:intermediary");
 					} catch (IOException e) {
 						e.printStackTrace();
+					}
+				});
+
+				//Allow adding extra mappings onto a compile for Mixin to generate remaps with
+				//The MinecraftVersion is not really relevant so we'll simplify things and pass null
+				javaCompileTask.getExtensions().create("mappings", MappingContainer.class, (Object) null);
+				javaCompileTask.doFirst(task -> {
+					MappingContainer extraMappings = task.getExtensions().getByType(MappingContainer.class);
+					if (extraMappings.isEmpty()) return; //Nothing to do
+
+					Path mappingFile;
+					try {
+						mappingFile = Files.createTempFile(task.getTemporaryDir().toPath(), "mixin-extra", ".tiny");
+					} catch (IOException e) {
+						throw new UncheckedIOException("Failed to create temporary mappings file", e);
+					}
+
+					String from = extraMappings.getFrom();
+					String to = extraMappings.getTo();
+
+					try (TinyWriter writer = new TinyWriter(mappingFile, from, to)) {
+						for (Entry<String, String> entry : extraMappings.getClasses().entrySet()) {
+							writer.acceptClass(entry.getKey(), entry.getValue());
+						}
+
+						for (Entry<EntryTriple, String> entry : extraMappings.getMethods().entrySet()) {
+							EntryTriple method = entry.getKey();
+							writer.acceptMethod(method.getOwner(), method.getDesc(), method.getName(), entry.getValue());
+						}
+
+						for (Entry<EntryTriple, String> entry : extraMappings.getFields().entrySet()) {
+							EntryTriple field = entry.getKey();
+							writer.acceptField(field.getOwner(), field.getDesc(), field.getName(), entry.getValue());
+						}
+
+						//If there are any class members, the signatures might include Minecraft types which need stating explicitly
+						//It could be missed but then they wouldn't get remapped which is not very useful
+						if (!extraMappings.getMethods().isEmpty() || !extraMappings.getFields().isEmpty()) {
+							Map<String, String> classes;
+							try {
+								classes = extension.getMappingsProvider().getMappings().getClassEntries().stream()
+																.collect(Collectors.toMap(entry -> entry.get(from), entry -> entry.get(to)));
+							} catch (IOException e) {
+								throw new UncheckedIOException("Error getting complete mappings", e);
+							}
+
+							Map<String, String> extraClasses = new HashMap<>();
+
+							for (EntryTriple member : extraMappings.getMethods().keySet()) {
+								if (classes.containsKey(member.getOwner())) {
+									extraClasses.put(member.getOwner(), classes.get(member.getOwner()));
+								}
+
+								for (Type argument : Type.getArgumentTypes(member.getDesc())) {
+									String argumentType = argument.getInternalName();
+
+									if (classes.containsKey(argumentType)) {
+										extraClasses.put(argumentType, classes.get(argumentType));
+									}
+								}
+
+								String returnType = Type.getReturnType(member.getDesc()).getInternalName();
+								if (classes.containsKey(returnType)) {
+									extraClasses.put(returnType, classes.get(returnType));
+								}
+							}
+
+							for (EntryTriple member : extraMappings.getFields().keySet()) {
+								if (classes.containsKey(member.getOwner())) {
+									extraClasses.put(member.getOwner(), classes.get(member.getOwner()));
+								}
+
+								String returnType = Type.getType(member.getDesc()).getInternalName();
+								if (classes.containsKey(returnType)) {
+									extraClasses.put(returnType, classes.get(returnType));
+								}
+							}
+
+							for (Entry<String, String> entry : extraClasses.entrySet()) {
+								writer.acceptClass(entry.getKey(), entry.getValue());
+							}
+						}
+					} catch (IOException e) {
+						throw new UncheckedIOException("Failed to write extra Mixin mappings file", e);
+					}
+
+					task.getLogger().info("Appending extra Mixin mappings at {}", mappingFile);
+
+					StringBuilder arg = new StringBuilder("-AinMapExtraFiles");
+					arg.append(Character.toTitleCase(from.charAt(0))).append(from.substring(1)); //Capitalise the namespaces
+					arg.append(Character.toTitleCase(to.charAt(0))).append(to.substring(1));
+					javaCompileTask.getOptions().getCompilerArgs().add(arg.append('=').append(mappingFile.toAbsolutePath()).toString());
+				});
+
+				javaCompileTask.doFirst(task -> {
+					if (extension.hasTokens()) {
+						StringBuilder arg = new StringBuilder("-Atokens=");
+
+						for (Entry<String, String> entry : extension.getTokens().entrySet()) {
+							arg.append(entry.getKey()).append('=').append(entry.getValue()).append(';');
+						}
+
+						task.getLogger().info("Appending {} Mixin tokens", extension.getTokens().size());
+						javaCompileTask.getOptions().getCompilerArgs().add(arg.substring(0, arg.length() - 1));
 					}
 				});
 			}
@@ -317,7 +432,7 @@ public class AbstractPlugin implements Plugin<Project> {
 			dependencyManager.addProvider(new MinecraftProvider());
 			dependencyManager.addProvider(new StackedMappingsProvider());
 			dependencyManager.addProvider(new MinecraftMappedProvider());
-			dependencyManager.addProvider(new MappedModsProvider());
+			MappedModsCollectors.addAll(dependencyManager);
 			dependencyManager.addProvider(new LaunchProvider());
 
 			dependencyManager.handleDependencies(project);

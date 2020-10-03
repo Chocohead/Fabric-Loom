@@ -26,6 +26,7 @@ package net.fabricmc.loom.util;
 
 import java.util.Map;
 
+import net.fabricmc.loom.LoomGradleExtension;
 import net.fabricmc.mappings.ClassEntry;
 import net.fabricmc.mappings.EntryTriple;
 import net.fabricmc.mappings.FieldEntry;
@@ -35,23 +36,38 @@ import net.fabricmc.tinyremapper.IMappingProvider;
 import net.fabricmc.tinyremapper.MemberInstance;
 
 public class TinyRemapperMappingsHelper {
+	public interface LocalNameSuggestor {
+		String suggestLocalName(String type, boolean plural);
+	}
+
 	private TinyRemapperMappingsHelper() { }
 
-	public static IMappingProvider create(Mappings mappings, String from, String to, boolean remapLocalVariables) {
-		if (remapLocalVariables) throw new UnsupportedOperationException("TODO");
+	public static IMappingProvider create(LoomGradleExtension extension, Mappings mappings, String from, String to) {
+		return new IMappingProvider() {
+			@Override
+			public void load(Map<String, String> classMap, Map<String, String> fieldMap, Map<String, String> methodMap) {
+				for (ClassEntry entry : mappings.getClassEntries()) {
+					classMap.put(entry.get(from), entry.get(to));
+				}
 
-		return (classMap, fieldMap, methodMap) -> {
-			for (ClassEntry entry : mappings.getClassEntries()) {
-				classMap.put(entry.get(from), entry.get(to));
+				for (FieldEntry entry : mappings.getFieldEntries()) {
+					add(entry, from, to, fieldMap);
+				}
+
+				for (MethodEntry entry : mappings.getMethodEntries()) {
+					EntryTriple fromTriple = entry.get(from);
+					methodMap.put(fromTriple.getOwner() + '/' + MemberInstance.getMethodId(fromTriple.getName(), fromTriple.getDesc()), entry.get(to).getName());
+				}
 			}
 
-			for (FieldEntry entry : mappings.getFieldEntries()) {
-				add(entry, from, to, fieldMap);
-			}
+			@Override
+			public String suggestLocalName(String type, boolean plural) {
+				for (LocalNameSuggestor suggestor : extension.getLocalSuggestors()) {
+					String name = suggestor.suggestLocalName(type, plural);
+					if (name != null) return name;
+				}
 
-			for (MethodEntry entry : mappings.getMethodEntries()) {
-				EntryTriple fromTriple = entry.get(from);
-				methodMap.put(fromTriple.getOwner() + '/' + MemberInstance.getMethodId(fromTriple.getName(), fromTriple.getDesc()), entry.get(to).getName());
+				return IMappingProvider.super.suggestLocalName(type, plural);
 			}
 		};
 	}

@@ -126,14 +126,14 @@ public class ClassReconstructor {
 
 		if ((node.access & Opcodes.ACC_ENUM) != 0) {
 			syntheticOffset = 2;
-            syntheticArgs = "(Ljava/lang/String;I";
+			syntheticArgs = "(Ljava/lang/String;I";
 		} else {//SyntheticParameterClassVisitor is expecting classes that have been through ProGuard, the patched class won't have been
 			for (InnerClassNode innerClass : node.innerClasses) {
 				if (innerClass.name.equals(node.name) && innerClass.innerName != null && innerClass.outerName != null && (innerClass.access & Opcodes.ACC_STATIC) == 0) {
 					syntheticOffset = 1;
-		            syntheticArgs = "(L" + innerClass.outerName + ';';
-		            break;
-		        }
+					syntheticArgs = "(L" + innerClass.outerName + ';';
+					break;
+				}
 			}
 		}
 
@@ -205,33 +205,37 @@ public class ClassReconstructor {
 			boolean madeShift = false;
 
 			while (c < client.size() && s < server.size() && client.get(c).equals(server.get(s))) {
-                c++;
-                s++;
-                madeShift = true;
-            }
+				c++;
+				s++;
+				madeShift = true;
+			}
 
-            while (c < client.size() && !server.contains(client.get(c))) {
-                c++;
-                madeShift = true;
-            }
+			while (c < client.size() && !server.contains(client.get(c))) {
+				c++;
+				madeShift = true;
+			}
 
-            while (s < server.size() && !client.contains(server.get(s))) {
-                s++;
-                madeShift = true;
-            }
+			while (s < server.size() && !client.contains(server.get(s))) {
+				s++;
+				madeShift = true;
+			}
 
-            if (!madeShift) {//Will deadlock in Stitch
-            	if (attemptedFix) {
-            		throw new IllegalStateException("Unable to fix " + type + " inconsistencies in " + name);
-            	} else {
-            		logger.info(Character.toUpperCase(type.charAt(0)) + type.substring(1) + " deadlock found in " + name + " at " + c + ", " + s);
-            		Collections.swap(client, c, c + 1);
-            		swaps.add(new Swap(c, c + 1));
-            		attemptedFix = true;
-            	}
-            } else if (attemptedFix) {//Fixed the problem
-            	attemptedFix = false;
-            }
+			if (!madeShift) {//Will deadlock in Stitch
+				if (attemptedFix) {
+					throw new IllegalStateException("Unable to fix " + type + " inconsistencies in " + name);
+				} else {
+					logger.info(Character.toUpperCase(type.charAt(0)) + type.substring(1) + " deadlock found in " + name + " at " + c + ", " + s);
+
+					int serverSwap = client.indexOf(server.get(s));
+					if (serverSwap <= c) throw new AssertionError("Client has fallen behind server in " + name + '?');
+
+					Collections.swap(client, c, serverSwap);
+					swaps.add(new Swap(c, serverSwap));
+					attemptedFix = true;
+				}
+			} else if (attemptedFix) {//Fixed the problem
+				attemptedFix = false;
+			}
 		}
 
 		return swaps;

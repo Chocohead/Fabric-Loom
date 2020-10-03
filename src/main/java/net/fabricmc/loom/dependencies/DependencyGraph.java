@@ -229,9 +229,11 @@ class DependencyGraph {
 				it.remove();
 				currentActive.addAll(node.flagComplete());
 
-				if (currentActive.isEmpty() && !node.getDependents().stream().allMatch(dependent -> awaiting.containsAll(dependent.getDependencies()))) {
+				if (currentActive.isEmpty() && !node.getDependents().stream().map(DependencyNode::getDependencies).allMatch(awaiting::containsAll)) {
 					throw new IllegalStateException("All remaining dependencies have dependencies!");
 				}
+
+				if (!currentActive.isEmpty() || awaiting.isEmpty()) notifyAll();
 				break;
 			}
 		}
@@ -260,5 +262,16 @@ class DependencyGraph {
 				return nextAvailable();
 			}
 		};
+	}
+
+	/**
+	 * Waits until either {@link #hasAvailable()} is true or there are no remaining {@link DependencyProvider}s to process
+	 *
+	 * @throws InterruptedException If the current thread is interrupted before work is available
+	 */
+	public synchronized boolean waitForWork() throws InterruptedException {
+		if (currentActive.isEmpty() && !awaiting.isEmpty()) wait();
+
+		return !currentActive.isEmpty();
 	}
 }

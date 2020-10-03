@@ -107,6 +107,8 @@ public class Openfine {
 		} catch (ReflectiveOperationException e) {
 			throw new RuntimeException("Error running OptiFine installer", e);
 		}
+
+		System.gc(); //The OptiFine installer leaks a ZipFile of the client jar, try to clean the reference back up
 	}
 
 	private static void merge(Logger logger, File client, File optifine, File server, File to) throws IOException {
@@ -303,7 +305,7 @@ public class Openfine {
 											String clazz = namedToNotch.get(className);
 											if (clazz != null) {
 												String remap = clazz + '/' + (method ? MemberInstance.getMethodId(name, desc) : MemberInstance.getFieldId(name, desc, false));
-												name = notchToNamed.getOrDefault(remap, remap);
+												name = notchToNamed.getOrDefault(remap, name);
 											} else {
 												logger.warn("Unable to find backwards mapping for ".concat(className));
 											}

@@ -25,22 +25,31 @@
 package net.fabricmc.loom.dependencies;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.jar.JarFile;
+import java.util.zip.ZipEntry;
 
+import com.google.common.base.Throwables;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
-import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
-import org.gradle.api.artifacts.Dependency;
-import org.gradle.api.artifacts.DependencySet;
 import org.gradle.api.artifacts.ExternalModuleDependency;
 import org.gradle.api.artifacts.repositories.MavenArtifactRepository;
+import org.gradle.api.logging.Logger;
 import org.gradle.api.plugins.JavaPlugin;
 
 import net.fabricmc.loom.LoomGradleExtension;
-import net.fabricmc.loom.dependencies.PhysicalDependencyProvider.DependencyInfo;
 import net.fabricmc.loom.util.Constants;
 
 public class LoomDependencyManager {
@@ -96,42 +105,76 @@ public class LoomDependencyManager {
 		DependencyGraph graph = new DependencyGraph(dependencyProviderList);
 		List<Runnable> afterTasks = new ArrayList<>();
 
-		for (DependencyProvider provider : graph.asIterable()) {
-			if (provider instanceof PhysicalDependencyProvider) {
-				PhysicalDependencyProvider physicalProvider = (PhysicalDependencyProvider) provider;
+		if (extension.shouldLoadInParallel()) {
+			List<CompletableFuture<?>> tasks = new ArrayList<>();
+			AtomicBoolean didBreak = new AtomicBoolean();
 
-				Configuration configuration = project.getConfigurations().getByName(physicalProvider.getTargetConfig());
-				DependencySet dependencies = configuration.getDependencies();
+			try {
+				while (graph.waitForWork() && !didBreak.get()) {
+					for (DependencyProvider provider : graph.allAvailable()) {
+						tasks.add(CompletableFuture.runAsync(() -> {
+							try {
+								provider.provide(project, extension, afterTasks::add);
+							} catch (Throwable t) {
+								throw new RuntimeException("Failed to provide " + provider.getType() + " dependency of type " + provider.getClass(), t);
+							}
+						}).whenComplete((success, exception) -> {
+							if (exception == null) {
+								graph.markComplete(provider);
+							} else {
+								didBreak.set(true);
 
-				if (physicalProvider.isRequired() && dependencies.size() < 1) {
-					throw new InvalidUserDataException("Missing dependency for " + configuration.getName() + " configuration");
-				}
-
-				if (physicalProvider.isUnique() && dependencies.size() > 1) {
-					throw new InvalidUserDataException("Duplicate dependencies for " + configuration.getName() + " configuration");
-				}
-
-				for (Dependency dependency : dependencies) {
-					DependencyInfo info = DependencyInfo.create(project, dependency, configuration);
-
-					try {
-						physicalProvider.provide(info, project, extension, afterTasks::add);
-					} catch (Throwable t) {
-						throw new RuntimeException(String.format("%s failed to provide %s:%s:%s for %s", provider.getClass(),
-									dependency.getGroup(), dependency.getName(), dependency.getVersion(), physicalProvider.getTargetConfig()), t);
+								synchronized (graph) {
+									graph.notifyAll();
+								}
+							}
+						}));
 					}
 				}
-			} else if (provider instanceof LogicalDependencyProvider) {
-				try {
-					((LogicalDependencyProvider) provider).provide(project, extension, afterTasks::add);
-				} catch (Throwable t) {
-					throw new RuntimeException("Failed to provide logical dependency of type " + provider.getClass(), t);
-				}
-			} else {
-				throw new IllegalStateException("Unexpected dependency provider type for " + provider + ": " + provider.getClass());
+			} catch (InterruptedException e) {
+				throw new RuntimeException("Unexpected halt to processing dependencies", e);
 			}
 
-			graph.markComplete(provider);
+			if (didBreak.get()) {//Bailed early, time to unpack the exceptions
+				Throwable thrown = null;
+
+				for (CompletableFuture<?> task : tasks) {
+					try {
+						task.join();
+					} catch (CancellationException e) {
+						//Well it didn't strictly go wrong if cancelled
+					} catch (CompletionException e) {
+						if (thrown == null) {
+							thrown = e.getCause();
+						} else {
+							thrown.addSuppressed(e.getCause());
+						}
+					} catch (Throwable t) {
+						if (thrown == null) {
+							thrown = t;
+						} else {
+							thrown.addSuppressed(t);
+						}
+					}
+				}
+
+				if (thrown == null) {
+					throw new IllegalStateException("Error processing dependencies, unable to find cause");
+				} else {
+					Throwables.throwIfUnchecked(thrown);
+					throw new RuntimeException("Error processing dependencies", thrown);
+				}
+			}
+		} else {
+			for (DependencyProvider provider : graph.asIterable()) {
+				try {
+					provider.provide(project, extension, afterTasks::add);
+				} catch (Throwable t) {
+					throw new RuntimeException("Failed to provide " + provider.getType() + " dependency of type " + provider.getClass(), t);
+				}
+
+				graph.markComplete(provider);
+			}
 		}
 
 		if (extension.getInstallerJson() == null) {
@@ -140,7 +183,7 @@ public class LoomDependencyManager {
 			Configuration configuration = project.getConfigurations().getByName(Constants.MOD_COMPILE_CLASSPATH);
 
 			for (File input : configuration.resolve()) {
-				JsonObject jsonObject = ModProcessor.readInstallerJson(input, project);
+				JsonObject jsonObject = findInstallerJson(project.getLogger(), input, extension.getLoaderLaunchMethod());
 
 				if (jsonObject != null) {
 					if (extension.getInstallerJson() != null) {
@@ -163,6 +206,36 @@ public class LoomDependencyManager {
 		for (Runnable runnable : afterTasks) {
 			runnable.run();
 		}
+	}
+
+	private static JsonObject findInstallerJson(Logger logger, File file, String launchMethod) {
+		try (JarFile jarFile = new JarFile(file)) {
+			ZipEntry entry = null;
+
+			if (!launchMethod.isEmpty()) {
+				entry = jarFile.getEntry("fabric-installer." + launchMethod + ".json");
+
+				if (entry == null) {
+					logger.warn("Could not find loader launch method '{}', falling back", launchMethod);
+				}
+			}
+
+			if (entry == null) {
+				entry = jarFile.getEntry("fabric-installer.json");
+
+				if (entry == null) {
+					return null;
+				}
+			}
+
+			try (Reader reader = new InputStreamReader(jarFile.getInputStream(entry), StandardCharsets.UTF_8)) {
+				return new JsonParser().parse(reader).getAsJsonObject();
+			}
+		} catch (IOException e) {
+			logger.warn("Error finding installer JSON in {}", file.getPath(), e);
+		}
+
+		return null;
 	}
 
 	private static void handleInstallerJson(JsonObject jsonObject, Project project) {

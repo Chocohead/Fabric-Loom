@@ -25,6 +25,8 @@
 package net.fabricmc.loom;
 
 import java.io.File;
+import java.net.URI;
+import java.net.URL;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,7 +47,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.gson.JsonObject;
 
-import org.cadixdev.lorenz.MappingSet;
 import org.cadixdev.mercury.Mercury;
 
 import org.gradle.api.Project;
@@ -65,6 +66,8 @@ import net.fabricmc.loom.providers.MappingsProvider;
 import net.fabricmc.loom.providers.MinecraftMappedProvider;
 import net.fabricmc.loom.providers.MinecraftProvider;
 import net.fabricmc.loom.util.Constants;
+import net.fabricmc.loom.util.GradleSupport;
+import net.fabricmc.loom.util.TinyRemapperMappingsHelper.LocalNameSuggestor;
 import net.fabricmc.stitch.commands.CommandProposeFieldNames.NameAcceptor;
 
 public class LoomGradleExtension {
@@ -134,6 +137,8 @@ public class LoomGradleExtension {
 	private JarMergeOrder mergeOrder = JarMergeOrder.INDIFFERENT;
 	private boolean bulldozeMappings;
 	private NameAcceptor fieldInferenceFilter = (inputMapping, originalName, replacementName) -> originalName.startsWith("field_");
+	private final List<LocalNameSuggestor> nameSuggestors = new ArrayList<>();
+	private final Map<String, String> tokens = new HashMap<>();
 	private File atFile;
 	private File optifine;
 	private List<Path> unmappedModsBuilt = new ArrayList<>();
@@ -141,13 +146,9 @@ public class LoomGradleExtension {
 	//Not to be set in the build.gradle
 	private final Project project;
 	private LoomDependencyManager dependencyManager;
+	private boolean parallelLoad;
 	private JsonObject installerJson;
-	private MappingSet[] srcMappingCache = new MappingSet[2];
 	private Mercury[] srcMercuryCache = new Mercury[2];
-
-	public MappingSet getOrCreateSrcMappingCache(int id, Supplier<MappingSet> factory) {
-		return srcMappingCache[id] != null ? srcMappingCache[id] : (srcMappingCache[id] = factory.get());
-	}
 
 	public Mercury getOrCreateSrcMercuryCache(int id, Supplier<Mercury> factory) {
 		return srcMercuryCache[id] != null ? srcMercuryCache[id] : (srcMercuryCache[id] = factory.get());
@@ -155,6 +156,14 @@ public class LoomGradleExtension {
 
 	public LoomGradleExtension(Project project) {
 		this.project = project;
+
+		//Common Java types which get silly local names from the capitalisation by default
+		addLocalName(URL.class.getName(), "url");
+		addLocalName(URI.class.getName(), "uri");
+
+		//Gradle 6 tightens the rules for resolving configurations off thread (by not allowing it at all)
+		//There are ways around it, but said ways need implementing within LoomDependencyManager
+		parallelLoad = GradleSupport.majorGradleVersion(project) < 6;
 	}
 
 	public void addUnmappedMod(Path file) {
@@ -378,6 +387,14 @@ public class LoomGradleExtension {
 		return loaderLaunchMethod != null ? loaderLaunchMethod : "";
 	}
 
+	public void setParallelLoad(boolean inParallel) {
+		parallelLoad = inParallel;
+	}
+
+	public boolean shouldLoadInParallel() {
+		return parallelLoad;
+	}
+
 	public LoomDependencyManager getDependencyManager() {
 		return dependencyManager;
 	}
@@ -448,6 +465,50 @@ public class LoomGradleExtension {
 	public NameAcceptor getFieldInferenceFilter() {
 		return fieldInferenceFilter;
 	}
+
+	public void addLocalName(String typeName, String localName) {
+		addLocalName(typeName, localName, localName + 's');
+	}
+
+	public void addLocalName(String typeName, String localName, String pluralLocalName) {
+		String internalType = Objects.requireNonNull(typeName, "Passed in a null type").replace('.', '/');
+
+		addLocalNamer((type, plural) -> internalType.equals(type) ? plural ? pluralLocalName : localName : null);
+	}
+
+	public void addLocalNamer(LocalNameSuggestor suggestor) {
+		nameSuggestors.add(suggestor);
+	}
+
+	public List<LocalNameSuggestor> getLocalSuggestors() {
+		return Collections.unmodifiableList(nameSuggestors);
+	}
+
+	public void token(CharSequence name) {
+        token(name, "true");
+    }
+
+    public void token(CharSequence name, CharSequence value) {
+    	String cleanName = name.toString().trim();
+    	if (cleanName.indexOf(';') >= 0) throw new IllegalArgumentException("Token name cannot contain ;");
+
+    	String cleanValue = value.toString().trim();
+    	if (cleanValue.indexOf(';') >= 0) throw new IllegalArgumentException("Token value cannot contain ;");
+
+        tokens.put(cleanName, cleanValue);
+    }
+
+    public void tokens(Map<CharSequence, CharSequence> tokens) {
+    	tokens.forEach(this::token);
+    }
+
+    public boolean hasTokens() {
+    	return !tokens.isEmpty();
+    }
+
+    public Map<String, String> getTokens() {
+    	return Collections.unmodifiableMap(tokens);
+    }
 
 	public void setAT(Object file) {
 		atFile = project.file(file);

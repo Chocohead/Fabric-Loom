@@ -328,6 +328,10 @@ public class YarnGithubResolver {
 			fields.clear();
 			fields.putAll(mappings);
 		}
+
+		public boolean isEmpty() {
+			return classes.isEmpty() && methods.isEmpty() && fields.isEmpty();
+		}
 	}
 
 	public static class ExtraMappings extends ComputedDependency {

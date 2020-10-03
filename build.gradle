@@ -59,7 +59,7 @@ dependencies {
 	}
 
 	// tinyfile management
-	implementation ('com.github.Chocohead:tiny-remapper:a43dcc') {
+	implementation ('com.github.Chocohead:tiny-remapper:ab144ea') {
 		transitive = false
 	}
 	implementation 'cuchaz:enigma:0.15.3+build.170:lib'
@@ -97,6 +97,7 @@ license {
 	exclude '**/loom/util/DownloadUtil.java'
 	exclude '**/loom/task/RemappingJar.java'
 	exclude '**/loom/util/AccessTransformerHelper.java'
+	exclude '**/loom/dependencies/ArtifactDependencyProvider.java'
 	exclude '**/loom/dependencies/ArtifactInfo.java'
 	exclude '**/loom/dependencies/ComputedDependency.java'
 	exclude '**/loom/dependencies/DependencyGraph.java'
@@ -104,6 +105,10 @@ license {
 	exclude '**/loom/dependencies/PhysicalDependencyProvider.java'
 	exclude '**/loom/providers/JarNameFactory.java'
 	exclude '**/loom/providers/JarNamingStrategy.java'
+	exclude '**/loom/providers/MappedModsCollector.java'
+	exclude '**/loom/providers/MappedModsCollectors.java'
+	exclude '**/loom/providers/MappedModsProvider.java'
+	exclude '**/loom/providers/MappedModsResolver.java'
 	exclude '**/loom/providers/MappingsProvider.java'
 	exclude '**/loom/providers/MinecraftProvider.java'
 	exclude '**/loom/providers/MinecraftVersionAdaptable.java'
@@ -112,6 +117,7 @@ license {
 	exclude '**/loom/providers/StackedMappingsProvider.java'
 	exclude '**/loom/providers/mappings/*.java'
 	exclude '**/loom/providers/openfine/*.java'
+	exclude '**/loom/util/Closer.java'
 	exclude '**/loom/util/HexaFunction.java'
 	exclude '**/loom/util/ThrowingIntObjConsumer.java'
 	exclude '**/loom/task/fernflower/JavadocProvider.java'

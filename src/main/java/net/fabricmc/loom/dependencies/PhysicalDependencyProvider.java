@@ -18,9 +18,12 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.io.FilenameUtils;
 
+import org.gradle.api.GradleException;
+import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.DependencySet;
 import org.gradle.api.artifacts.ResolvedDependency;
 import org.gradle.api.artifacts.SelfResolvingDependency;
 
@@ -36,6 +39,8 @@ import net.fabricmc.loom.LoomGradleExtension;
  * A {@link DependencyProvider} which handles a {@link Configuration}
  *
  * @author Chocohead
+ *
+ * @see ArtifactDependencyProvider
  */
 public abstract class PhysicalDependencyProvider extends DependencyProvider {
 	/** The name of the {@link Configuration} (as given by {@link Configuration#getName()}) that this handles */
@@ -47,8 +52,37 @@ public abstract class PhysicalDependencyProvider extends DependencyProvider {
 	/** Whether there should be at most a single dependency in the target {@link Configuration} */
 	public abstract boolean isUnique();
 
+	@Override
+	protected final String getType() {
+		return "physical";
+	}
+
+	@Override
+	public final void provide(Project project, LoomGradleExtension extension, Consumer<Runnable> postPopulationScheduler) throws Exception {
+		Configuration configuration = project.getConfigurations().getByName(getTargetConfig());
+		DependencySet dependencies = configuration.getDependencies();
+
+		if (isRequired() && dependencies.size() < 1) {
+			throw new InvalidUserDataException("Missing dependency for " + configuration.getName() + " configuration");
+		}
+
+		if (isUnique() && dependencies.size() > 1) {
+			throw new InvalidUserDataException("Duplicate dependencies for " + configuration.getName() + " configuration");
+		}
+
+		for (Dependency dependency : dependencies) {
+			DependencyInfo info = DependencyInfo.create(project, dependency, configuration);
+
+			try {
+				provide(info, project, extension, postPopulationScheduler);
+			} catch (Throwable t) {
+				throw new GradleException(String.format("%s failed to provide %s for %s", getClass(), info.getDepString(), getTargetConfig()), t);
+			}
+		}
+	}
+
 	/** Perform whatever action this needs for the given {@link DependencyInfo} from the target {@link Configuration} */
-	public abstract void provide(DependencyInfo dependency, Project project, LoomGradleExtension extension, Consumer<Runnable> postPopulationScheduler) throws Exception;
+	protected abstract void provide(DependencyInfo dependency, Project project, LoomGradleExtension extension, Consumer<Runnable> postPopulationScheduler) throws Exception;
 
 	public static class DependencyInfo {
 		final Project project;
