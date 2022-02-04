@@ -61,7 +61,7 @@ dependencies {
 		exclude module: 'enigma'
 		exclude module: 'tiny-mappings-parser'
 	}
-	implementation ('com.github.calmilamsy:Tiny-Mappings-Parser:86ceccd') {
+	implementation ('com.github.Chocohead:Tiny-Mappings-Parser:d96d407') {
 		exclude module: 'sponge-mixin'
 	}
 	implementation ('com.github.Chocohead:OptiSine:cc6da75') {//Keep consistent with Openfine.VERSION
@@ -69,7 +69,7 @@ dependencies {
 	}
 
 	// tinyfile management
-	implementation ('com.github.Chocohead:tiny-remapper:ab144ea') {
+	implementation ('com.github.Chocohead:tiny-remapper:b822055') {
 		transitive = false
 	}
 	compileOnly 'cuchaz:enigma:0.27.1'
