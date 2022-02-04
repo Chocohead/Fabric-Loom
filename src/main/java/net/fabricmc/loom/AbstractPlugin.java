@@ -426,75 +426,78 @@ public class AbstractPlugin implements Plugin<Project> {
 			}
 		});
 
-		addAfterEvaluate(() -> {
-			LoomDependencyManager dependencyManager = new LoomDependencyManager();
-			extension.setDependencyManager(dependencyManager);
+		addAfterEvaluate(new Runnable() {
+			@Override
+			public void run() {
+				LoomDependencyManager dependencyManager = new LoomDependencyManager();
+				extension.setDependencyManager(dependencyManager);
 
-			dependencyManager.addProvider(new MinecraftProvider());
-			dependencyManager.addProvider(new StackedMappingsProvider());
-			dependencyManager.addProvider(new MinecraftMappedProvider());
-			MappedModsCollectors.addAll(dependencyManager);
-			dependencyManager.addProvider(new LaunchProvider());
+				dependencyManager.addProvider(new MinecraftProvider());
+				dependencyManager.addProvider(new StackedMappingsProvider());
+				dependencyManager.addProvider(new MinecraftMappedProvider());
+				MappedModsCollectors.addAll(dependencyManager);
+				dependencyManager.addProvider(new LaunchProvider());
 
-			dependencyManager.handleDependencies(project);
-
-
-			project.getTasks().getByName("idea").finalizedBy(project.getTasks().getByName("genIdeaWorkspace"));
-			project.getTasks().getByName("eclipse").finalizedBy(project.getTasks().getByName("genEclipseRuns"));
-
-			if (extension.autoGenIDERuns) {
-				SetupIntelijRunConfigs.setup(project);
-			}
+				dependencyManager.handleDependencies(project);
 
 
-			// Enables the default mod remapper
-			if (extension.remapMod) {
-				AbstractArchiveTask jarTask = (AbstractArchiveTask) project.getTasks().getByName(JavaPlugin.JAR_TASK_NAME);
-				RemapJarTask remapJarTask = (RemapJarTask) project.getTasks().getByName("remapJar");
+				project.getTasks().getByName("idea").finalizedBy(project.getTasks().getByName("genIdeaWorkspace"));
+				project.getTasks().getByName("eclipse").finalizedBy(project.getTasks().getByName("genEclipseRuns"));
 
-				if (!remapJarTask.getInput().isPresent()) {
-					jarTask.setClassifier("dev");
-					remapJarTask.setClassifier("");
-					remapJarTask.getInput().set(jarTask.getArchivePath());
-					remapJarTask.setIncludeAT(jarTask.getExtensions().getByType(JarSettings.class).includeAT);
+				if (extension.autoGenIDERuns) {
+					SetupIntelijRunConfigs.setup(project);
 				}
 
-				extension.addUnmappedMod(jarTask.getArchivePath().toPath());
-				remapJarTask.setAddNestedDependencies(true);
 
-				project.getArtifacts().add("archives", remapJarTask);
-				remapJarTask.dependsOn(jarTask);
-				project.getTasks().getByName("build").dependsOn(remapJarTask);
+				// Enables the default mod remapper
+				if (extension.remapMod) {
+					AbstractArchiveTask jarTask = (AbstractArchiveTask) project.getTasks().getByName(JavaPlugin.JAR_TASK_NAME);
+					RemapJarTask remapJarTask = (RemapJarTask) project.getTasks().getByName("remapJar");
 
-				List<Task> remappingTasks = Stream.concat(project.getTasks().withType(RemapJarTask.class).matching(RemapJarTask::isAddNestedDependencies).stream(),
-						project.getTasks().withType(RemappingJar.class).matching(RemappingJar::isNestJar).stream()).collect(Collectors.toList());
-				if (!remappingTasks.isEmpty()) {
-					TaskDependency dependency = project.getConfigurations().getByName(Constants.INCLUDE).getTaskDependencyFromProjectDependency(true, "remapJar");
-
-					for (Task remappingTask : remappingTasks) {
-						remappingTask.dependsOn(dependency);
+					if (!remapJarTask.getInput().isPresent()) {
+						jarTask.setClassifier("dev");
+						remapJarTask.setClassifier("");
+						remapJarTask.getInput().set(jarTask.getArchivePath());
+						remapJarTask.setIncludeAT(jarTask.getExtensions().getByType(JarSettings.class).includeAT);
 					}
+
+					extension.addUnmappedMod(jarTask.getArchivePath().toPath());
+					remapJarTask.setAddNestedDependencies(true);
+
+					project.getArtifacts().add("archives", remapJarTask);
+					remapJarTask.dependsOn(jarTask);
+					project.getTasks().getByName("build").dependsOn(remapJarTask);
+
+					List<Task> remappingTasks = Stream.concat(project.getTasks().withType(RemapJarTask.class).matching(RemapJarTask::isAddNestedDependencies).stream(),
+							project.getTasks().withType(RemappingJar.class).matching(RemappingJar::isNestJar).stream()).collect(Collectors.toList());
+					if (!remappingTasks.isEmpty()) {
+						TaskDependency dependency = project.getConfigurations().getByName(Constants.INCLUDE).getTaskDependencyFromProjectDependency(true, "remapJar");
+
+						for (Task remappingTask : remappingTasks) {
+							remappingTask.dependsOn(dependency);
+						}
+					}
+
+					try {
+						AbstractArchiveTask sourcesTask = (AbstractArchiveTask) project.getTasks().getByName("sourcesJar");
+						RemapSourcesJarTask remapSourcesJarTask = (RemapSourcesJarTask) project.getTasks().findByName("remapSourcesJar");
+						remapSourcesJarTask.setInput(sourcesTask.getArchivePath());
+						remapSourcesJarTask.setOutput(sourcesTask.getArchivePath());
+						remapSourcesJarTask.doLast(task -> project.getArtifacts().add("archives", remapSourcesJarTask.getOutput()));
+						remapSourcesJarTask.dependsOn(project.getTasks().getByName("sourcesJar"));
+						project.getTasks().getByName("build").dependsOn(remapSourcesJarTask);
+					} catch (UnknownTaskException e) {
+						// pass
+					}
+				} else {
+					AbstractArchiveTask jarTask = (AbstractArchiveTask) project.getTasks().getByName("jar");
+					extension.addUnmappedMod(jarTask.getArchivePath().toPath());
 				}
 
-				try {
-					AbstractArchiveTask sourcesTask = (AbstractArchiveTask) project.getTasks().getByName("sourcesJar");
-					RemapSourcesJarTask remapSourcesJarTask = (RemapSourcesJarTask) project.getTasks().findByName("remapSourcesJar");
-					remapSourcesJarTask.setInput(sourcesTask.getArchivePath());
-					remapSourcesJarTask.setOutput(sourcesTask.getArchivePath());
-					remapSourcesJarTask.doLast(task -> project.getArtifacts().add("archives", remapSourcesJarTask.getOutput()));
-					remapSourcesJarTask.dependsOn(project.getTasks().getByName("sourcesJar"));
-					project.getTasks().getByName("build").dependsOn(remapSourcesJarTask);
-				} catch (UnknownTaskException e) {
-					// pass
-				}
-			} else {
-				AbstractArchiveTask jarTask = (AbstractArchiveTask) project.getTasks().getByName("jar");
-				extension.addUnmappedMod(jarTask.getArchivePath().toPath());
+				// Disable some things used by log4j via the mixin AP that prevent it from being garbage collected
+				System.setProperty("log4j2.disable.jmx", "true");
+				System.setProperty("log4j.shutdownHookEnabled", "false");
 			}
-
-			// Disable some things used by log4j via the mixin AP that prevent it from being garbage collected
-			System.setProperty("log4j2.disable.jmx", "true");
-			System.setProperty("log4j.shutdownHookEnabled", "false");
 		});
 	}
 
