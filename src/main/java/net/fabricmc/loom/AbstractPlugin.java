@@ -483,7 +483,12 @@ public class AbstractPlugin implements Plugin<Project> {
 						RemapSourcesJarTask remapSourcesJarTask = (RemapSourcesJarTask) project.getTasks().findByName("remapSourcesJar");
 						remapSourcesJarTask.setInput(sourcesTask.getArchivePath());
 						remapSourcesJarTask.setOutput(sourcesTask.getArchivePath());
-						remapSourcesJarTask.doLast(task -> project.getArtifacts().add("archives", remapSourcesJarTask.getOutput()));
+						remapSourcesJarTask.doLast(new Action<Task>() {
+							@Override
+							public void execute(Task task) {
+								project.getArtifacts().add("archives", remapSourcesJarTask.getOutput());
+							}
+						});
 						remapSourcesJarTask.dependsOn(project.getTasks().getByName("sourcesJar"));
 						project.getTasks().getByName("build").dependsOn(remapSourcesJarTask);
 					} catch (UnknownTaskException e) {
