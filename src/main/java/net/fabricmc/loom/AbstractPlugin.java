@@ -192,7 +192,7 @@ public class AbstractPlugin implements Plugin<Project> {
 		configureCompile();
 		configureScala();
 
-		project.getTasks().withType(JavaCompile.class, javaCompileTask -> {
+		for (JavaCompile javaCompileTask : project.getTasks().withType(JavaCompile.class)) {
 			if (!javaCompileTask.getName().contains("Test") && !javaCompileTask.getName().contains("test")) {
 				//Allow adding extra mappings onto a compile for Mixin to generate remaps with
 				//The MinecraftVersion is not really relevant so we'll simplify things and pass null
@@ -309,7 +309,7 @@ public class AbstractPlugin implements Plugin<Project> {
 					javaCompileTask.getOptions().getCompilerArgs().add(arg.append('=').append(mappingFile.toAbsolutePath()).toString());
 				});
 			}
-		});
+		}
 
 		configureMaven();
 	}
