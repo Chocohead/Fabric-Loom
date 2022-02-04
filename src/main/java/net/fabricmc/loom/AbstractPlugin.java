@@ -41,6 +41,7 @@ import java.util.stream.Stream;
 
 import groovy.util.Node;
 
+import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
@@ -200,113 +201,117 @@ public class AbstractPlugin implements Plugin<Project> {
 				extraMappings.setFrom("named");
 				extraMappings.setTo("intermediary");
 
-				javaCompileTask.doFirst(task -> {
-					String from = extraMappings.getFrom();
-					String to = extraMappings.getTo();
+				javaCompileTask.doFirst(new Action<Task>() {
+					@Override
+					public void execute(Task task) {
 
-					task.getLogger().lifecycle(":setting java compiler args");
-					try {
-						Collections.addAll(javaCompileTask.getOptions().getCompilerArgs(),
-							"-AinMapFileNamedIntermediary=" + extension.getMappingsProvider().MAPPINGS_TINY.getCanonicalPath(),
-							"-AoutMapFileNamedIntermediary=" + extension.getMappingsProvider().MAPPINGS_MIXIN_EXPORT.getCanonicalPath(),
-							"-AoutRefMapFile=" + new File(javaCompileTask.getDestinationDir(), extension.getRefmapName(task)).getCanonicalPath(),
-							"-AdefaultObfuscationEnv=" + from + ':' + to);
-					} catch (IOException e) {
-						throw new UncheckedIOException("Unable to canonicalise path", e);
-					}
+						String from = extraMappings.getFrom();
+						String to = extraMappings.getTo();
 
-					if (extension.hasTokens()) {
-						StringBuilder arg = new StringBuilder("-Atokens=");
-
-						for (Entry<String, String> entry : extension.getTokens().entrySet()) {
-							arg.append(entry.getKey()).append('=').append(entry.getValue()).append(';');
+						task.getLogger().lifecycle(":setting java compiler args");
+						try {
+							Collections.addAll(javaCompileTask.getOptions().getCompilerArgs(),
+									"-AinMapFileNamedIntermediary=" + extension.getMappingsProvider().MAPPINGS_TINY.getCanonicalPath(),
+									"-AoutMapFileNamedIntermediary=" + extension.getMappingsProvider().MAPPINGS_MIXIN_EXPORT.getCanonicalPath(),
+									"-AoutRefMapFile=" + new File(javaCompileTask.getDestinationDir(), extension.getRefmapName(task)).getCanonicalPath(),
+									"-AdefaultObfuscationEnv=" + from + ':' + to);
+						} catch (IOException e) {
+							throw new UncheckedIOException("Unable to canonicalise path", e);
 						}
 
-						task.getLogger().info("Appending {} Mixin tokens", extension.getTokens().size());
-						javaCompileTask.getOptions().getCompilerArgs().add(arg.substring(0, arg.length() - 1));
-					}
+						if (extension.hasTokens()) {
+							StringBuilder arg = new StringBuilder("-Atokens=");
 
-					if (extraMappings.isEmpty()) return; //Nothing to else do
-
-					Path mappingFile;
-					try {
-						mappingFile = Files.createTempFile(task.getTemporaryDir().toPath(), "mixin-extra", ".tiny");
-					} catch (IOException e) {
-						throw new UncheckedIOException("Failed to create temporary mappings file", e);
-					}
-
-					try (TinyWriter writer = new TinyWriter(mappingFile, from, to)) {
-						for (Entry<String, String> entry : extraMappings.getClasses().entrySet()) {
-							writer.acceptClass(entry.getKey(), entry.getValue());
-						}
-
-						for (Entry<EntryTriple, String> entry : extraMappings.getMethods().entrySet()) {
-							EntryTriple method = entry.getKey();
-							writer.acceptMethod(method.getOwner(), method.getDesc(), method.getName(), entry.getValue());
-						}
-
-						for (Entry<EntryTriple, String> entry : extraMappings.getFields().entrySet()) {
-							EntryTriple field = entry.getKey();
-							writer.acceptField(field.getOwner(), field.getDesc(), field.getName(), entry.getValue());
-						}
-
-						//If there are any class members, the signatures might include Minecraft types which need stating explicitly
-						//It could be missed but then they wouldn't get remapped which is not very useful
-						if (!extraMappings.getMethods().isEmpty() || !extraMappings.getFields().isEmpty()) {
-							Map<String, String> classes;
-							try {
-								classes = extension.getMappingsProvider().getMappings().getClassEntries().stream()
-																.collect(Collectors.toMap(entry -> entry.get(from), entry -> entry.get(to)));
-							} catch (IOException e) {
-								throw new UncheckedIOException("Error getting complete mappings", e);
+							for (Entry<String, String> entry : extension.getTokens().entrySet()) {
+								arg.append(entry.getKey()).append('=').append(entry.getValue()).append(';');
 							}
 
-							Map<String, String> extraClasses = new HashMap<>();
+							task.getLogger().info("Appending {} Mixin tokens", extension.getTokens().size());
+							javaCompileTask.getOptions().getCompilerArgs().add(arg.substring(0, arg.length() - 1));
+						}
 
-							for (EntryTriple member : extraMappings.getMethods().keySet()) {
-								if (classes.containsKey(member.getOwner())) {
-									extraClasses.put(member.getOwner(), classes.get(member.getOwner()));
+						if (extraMappings.isEmpty()) return; //Nothing to else do
+
+						Path mappingFile;
+						try {
+							mappingFile = Files.createTempFile(task.getTemporaryDir().toPath(), "mixin-extra", ".tiny");
+						} catch (IOException e) {
+							throw new UncheckedIOException("Failed to create temporary mappings file", e);
+						}
+
+						try (TinyWriter writer = new TinyWriter(mappingFile, from, to)) {
+							for (Entry<String, String> entry : extraMappings.getClasses().entrySet()) {
+								writer.acceptClass(entry.getKey(), entry.getValue());
+							}
+
+							for (Entry<EntryTriple, String> entry : extraMappings.getMethods().entrySet()) {
+								EntryTriple method = entry.getKey();
+								writer.acceptMethod(method.getOwner(), method.getDesc(), method.getName(), entry.getValue());
+							}
+
+							for (Entry<EntryTriple, String> entry : extraMappings.getFields().entrySet()) {
+								EntryTriple field = entry.getKey();
+								writer.acceptField(field.getOwner(), field.getDesc(), field.getName(), entry.getValue());
+							}
+
+							//If there are any class members, the signatures might include Minecraft types which need stating explicitly
+							//It could be missed but then they wouldn't get remapped which is not very useful
+							if (!extraMappings.getMethods().isEmpty() || !extraMappings.getFields().isEmpty()) {
+								Map<String, String> classes;
+								try {
+									classes = extension.getMappingsProvider().getMappings().getClassEntries().stream()
+											.collect(Collectors.toMap(entry -> entry.get(from), entry -> entry.get(to)));
+								} catch (IOException e) {
+									throw new UncheckedIOException("Error getting complete mappings", e);
 								}
 
-								for (Type argument : Type.getArgumentTypes(member.getDesc())) {
-									String argumentType = argument.getInternalName();
+								Map<String, String> extraClasses = new HashMap<>();
 
-									if (classes.containsKey(argumentType)) {
-										extraClasses.put(argumentType, classes.get(argumentType));
+								for (EntryTriple member : extraMappings.getMethods().keySet()) {
+									if (classes.containsKey(member.getOwner())) {
+										extraClasses.put(member.getOwner(), classes.get(member.getOwner()));
+									}
+
+									for (Type argument : Type.getArgumentTypes(member.getDesc())) {
+										String argumentType = argument.getInternalName();
+
+										if (classes.containsKey(argumentType)) {
+											extraClasses.put(argumentType, classes.get(argumentType));
+										}
+									}
+
+									String returnType = Type.getReturnType(member.getDesc()).getInternalName();
+									if (classes.containsKey(returnType)) {
+										extraClasses.put(returnType, classes.get(returnType));
 									}
 								}
 
-								String returnType = Type.getReturnType(member.getDesc()).getInternalName();
-								if (classes.containsKey(returnType)) {
-									extraClasses.put(returnType, classes.get(returnType));
+								for (EntryTriple member : extraMappings.getFields().keySet()) {
+									if (classes.containsKey(member.getOwner())) {
+										extraClasses.put(member.getOwner(), classes.get(member.getOwner()));
+									}
+
+									String returnType = Type.getType(member.getDesc()).getInternalName();
+									if (classes.containsKey(returnType)) {
+										extraClasses.put(returnType, classes.get(returnType));
+									}
+								}
+
+								for (Entry<String, String> entry : extraClasses.entrySet()) {
+									writer.acceptClass(entry.getKey(), entry.getValue());
 								}
 							}
-
-							for (EntryTriple member : extraMappings.getFields().keySet()) {
-								if (classes.containsKey(member.getOwner())) {
-									extraClasses.put(member.getOwner(), classes.get(member.getOwner()));
-								}
-
-								String returnType = Type.getType(member.getDesc()).getInternalName();
-								if (classes.containsKey(returnType)) {
-									extraClasses.put(returnType, classes.get(returnType));
-								}
-							}
-
-							for (Entry<String, String> entry : extraClasses.entrySet()) {
-								writer.acceptClass(entry.getKey(), entry.getValue());
-							}
+						} catch (IOException e) {
+							throw new UncheckedIOException("Failed to write extra Mixin mappings file", e);
 						}
-					} catch (IOException e) {
-						throw new UncheckedIOException("Failed to write extra Mixin mappings file", e);
+
+						task.getLogger().info("Appending extra Mixin mappings at {}", mappingFile);
+
+						StringBuilder arg = new StringBuilder("-AinMapExtraFiles");
+						arg.append(Character.toTitleCase(from.charAt(0))).append(from.substring(1)); //Capitalise the namespaces
+						arg.append(Character.toTitleCase(to.charAt(0))).append(to.substring(1));
+						javaCompileTask.getOptions().getCompilerArgs().add(arg.append('=').append(mappingFile.toAbsolutePath()).toString());
 					}
-
-					task.getLogger().info("Appending extra Mixin mappings at {}", mappingFile);
-
-					StringBuilder arg = new StringBuilder("-AinMapExtraFiles");
-					arg.append(Character.toTitleCase(from.charAt(0))).append(from.substring(1)); //Capitalise the namespaces
-					arg.append(Character.toTitleCase(to.charAt(0))).append(to.substring(1));
-					javaCompileTask.getOptions().getCompilerArgs().add(arg.append('=').append(mappingFile.toAbsolutePath()).toString());
 				});
 			}
 		}
