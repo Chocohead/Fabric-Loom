@@ -346,6 +346,8 @@ public class AccessTransformerHelper {
 	private static class ZipAT extends ByteArrayZipEntryTransformer {
 		/** The class name of the type we're aiming to transform */
 		public final String className;
+		/** Whether to transform methods to public (as traditionally) or protected (as idiomatic) */
+		private final boolean traditional;
 		/** A set of all methods we're aiming to transform in {@link #className} */
 		private final Set<String> transforms;
 		/** Whether to transform the access of {@link #className} itself */
@@ -355,12 +357,13 @@ public class AccessTransformerHelper {
 		/** Whether we have been used (ie {@link #transform(ZipEntry, byte[])} has been called) */
 		boolean hasTransformed = false;
 
-		ZipAT(Entry<String, Set<String>> entry, String wildcard) {
-			this(entry.getKey(), entry.getValue(), wildcard);
+		ZipAT(boolean traditional, Entry<String, Set<String>> entry, String wildcard) {
+			this(traditional, entry.getKey(), entry.getValue(), wildcard);
 		}
 
-		ZipAT(String className, Set<String> transforms, String wildcard) {
+		ZipAT(boolean traditional, String className, Set<String> transforms, String wildcard) {
 			this.className = className;
+			this.traditional = traditional;
 			this.transforms = transforms;
 
 			if (selfAT = transforms.remove(wildcard)) {
@@ -413,7 +416,7 @@ public class AccessTransformerHelper {
 				public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
 					if (!transforms.isEmpty()) {
 						return new MethodVisitor(api, super.visitMethod(expectedTransforms.remove(name.concat(descriptor)) ?
-																					flipBits(access, Opcodes.ACC_PROTECTED) : access, name, descriptor, signature, exceptions)) {
+																					flipBits(access, traditional ? Opcodes.ACC_PUBLIC : Opcodes.ACC_PROTECTED) : access, name, descriptor, signature, exceptions)) {
 							@Override
 							public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
 								super.visitMethodInsn(opcode == Opcodes.INVOKESPECIAL && !"<init>".equals(name) && transforms.contains(name.concat(descriptor)) ?
@@ -444,8 +447,8 @@ public class AccessTransformerHelper {
 		}
 	}
 
-	public static ZipEntryAT[] makeZipATs(Set<String> classPool, Map<String, Set<String>> transforms, String wildcard) {
-		Map<String, ZipAT> transformers = transforms.entrySet().stream().collect(Collectors.toMap(Entry::getKey, entry -> new ZipAT(entry, wildcard)));
+	public static ZipEntryAT[] makeZipATs(Set<String> classPool, Map<String, Set<String>> transforms, String wildcard, boolean traditional) {
+		Map<String, ZipAT> transformers = transforms.entrySet().stream().collect(Collectors.toMap(Entry::getKey, entry -> new ZipAT(traditional, entry, wildcard)));
 
 		Set<String> classChanges = transformers.entrySet().stream().filter(entry -> entry.getValue().changesOwnAccess()).map(Entry::getKey).collect(Collectors.toSet());
 		if (!classChanges.isEmpty()) {
@@ -469,7 +472,7 @@ public class AccessTransformerHelper {
 							if (transformers.containsKey(pool)) {
 								transformers.get(pool).addInnerTransform(rootEntry.getValue());
 							} else {
-								ZipAT transformer = new ZipAT(pool, Collections.emptySet(), null);
+								ZipAT transformer = new ZipAT(traditional, pool, Collections.emptySet(), null);
 								transformers.put(pool, transformer);
 								transformer.addInnerTransform(rootEntry.getValue());
 							}

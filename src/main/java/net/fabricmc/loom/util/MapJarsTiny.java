@@ -287,16 +287,17 @@ public class MapJarsTiny {
 		project.getLogger().info("Found " + transforms.size() + " classes that need tinkering with");
 		project.getLogger().lifecycle(":transforming minecraft");
 
+		boolean traditional = project.getExtensions().getByType(LoomGradleExtension.class).useTraditionalAT();
 		project.getLogger().info("Transforming intermediary jar");
-		doTheDeed(jarProvider.MINECRAFT_INTERMEDIARY_JAR, mappings, "intermediary", interTransforms, wildcard);
+		doTheDeed(jarProvider.MINECRAFT_INTERMEDIARY_JAR, mappings, "intermediary", interTransforms, wildcard, traditional);
 		project.getLogger().info("Transforming named jar");
-		doTheDeed(jarProvider.MINECRAFT_MAPPED_JAR, mappings, "named", transforms, wildcard);
+		doTheDeed(jarProvider.MINECRAFT_MAPPED_JAR, mappings, "named", transforms, wildcard, traditional);
 		project.getLogger().info("Transformation complete"); //Probably, successful is another matter
 	}
 
-	private static void doTheDeed(File jar, Mappings mappings, String type, Map<String, Set<String>> transforms, String wildcard) throws IOException {
+	private static void doTheDeed(File jar, Mappings mappings, String type, Map<String, Set<String>> transforms, String wildcard, boolean traditional) throws IOException {
 		Set<String> classPool = mappings.getClassEntries().parallelStream().map(entry -> entry.get(type)).collect(Collectors.toSet());
-		ZipEntryAT[] transformers = AccessTransformerHelper.makeZipATs(classPool, transforms, wildcard);
+		ZipEntryAT[] transformers = AccessTransformerHelper.makeZipATs(classPool, transforms, wildcard, traditional);
 
 		ZipUtil.transformEntries(jar, transformers);
 

@@ -147,6 +147,7 @@ public class LoomGradleExtension {
 	private NameAcceptor fieldInferenceFilter = (inputMapping, originalName, replacementName) -> originalName.startsWith("field_");
 	private final List<LocalNameSuggestor> nameSuggestors = new ArrayList<>();
 	private final Map<String, String> tokens = new HashMap<>();
+	private boolean traditionalAT = true;
 	private File atFile;
 	private File optifine;
 	private boolean addVersionIfNeeded = true;
@@ -537,6 +538,14 @@ public class LoomGradleExtension {
     public Map<String, String> getTokens() {
     	return Collections.unmodifiableMap(tokens);
     }
+
+	public void setTraditionalAT(boolean traditional) {
+		traditionalAT = traditional;
+	}
+
+	public boolean useTraditionalAT() {
+		return traditionalAT;
+	}
 
 	public void setAT(Object file) {
 		atFile = project.file(file);
