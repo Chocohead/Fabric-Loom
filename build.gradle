@@ -136,7 +136,7 @@ task javadocJar(type: Jar, dependsOn: javadoc) {
 	from javadoc.destinationDir
 }
 
-apply from: 'https://github.com/FabricMC/fabric-docs/raw/master/gradle/license.gradle'
+apply from: 'https://github.com/FabricMC/fabric-docs-old/raw/master/gradle/license.gradle'
 
 license {
 	exclude '**/loom/YarnGithubResolver.java'
