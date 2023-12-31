@@ -36,6 +36,7 @@ import java.util.concurrent.CompletionException;
 
 import com.google.common.base.Throwables;
 import com.google.common.collect.Iterables;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -190,11 +191,16 @@ public class LoomDependencyManager {
 		}
 	}
 
+	private static Iterable<JsonElement> getInstallerDependencies(JsonObject libraries) {
+		JsonArray common = libraries.getAsJsonArray("common");
+		return libraries.has("development") ? Iterables.concat(common, libraries.getAsJsonArray("development")) : common;
+	}
+
 	private static void handleInstallerJson(Project project, JsonObject json) {
 		Configuration mcDepsConfig = project.getConfigurations().getByName(Constants.MINECRAFT_DEPENDENCIES);
 		Set<String> urls = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
 
-		for (JsonElement element : json.getAsJsonObject("libraries").getAsJsonArray("common")) {
+		for (JsonElement element : getInstallerDependencies(json.getAsJsonObject("libraries"))) {
 			JsonObject library = element.getAsJsonObject();
 
 			String name = library.get("name").getAsString();
