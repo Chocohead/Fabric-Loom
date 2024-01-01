@@ -37,6 +37,8 @@ import java.util.Map;
 import java.util.Stack;
 import java.util.function.Supplier;
 
+import com.google.common.collect.Maps;
+
 import org.gradle.api.Project;
 import org.gradle.api.logging.LogLevel;
 import org.gradle.api.logging.Logger;
@@ -77,11 +79,17 @@ public abstract class AbstractFernFlowerDecompiler implements LoomDecompiler {
 		Map<String, Object> options = new HashMap<>();
         options.put(IFernflowerPreferences.DECOMPILE_GENERIC_SIGNATURES, "1");
         options.put(IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1");
+        options.put(IFernflowerPreferences.REMOVE_SYNTHETIC, "1");
         options.put(IFernflowerPreferences.INDENT_STRING, "\t"); //Use a tab not three spaces :|
-		options.put(IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH, "1");
         options.put(IFernflowerPreferences.LOG_LEVEL, "trace");
-        options.put(IFernflowerPreferences.THREADS, metaData.numberOfThreads);
-        options.put(IFernflowerPreferences.WARN_INCONSISTENT_INNER_CLASSES, "0");
+        options.put(IFernflowerPreferences.WARN_INCONSISTENT_INNER_CLASSES, "0"); //Nothing the user can do about this
+        options.put(IFernflowerPreferences.ERROR_MESSAGE, ""); //People shouldn't redistribute Minecraft classes
+        options.putAll(Maps.transformValues(metaData.options, value -> {
+        	if (value instanceof Boolean) {
+        		return (Boolean) value ? "1" : "0";
+        	}
+        	return value;
+        }));
 
 		List<String> args = new ArrayList<>();
 

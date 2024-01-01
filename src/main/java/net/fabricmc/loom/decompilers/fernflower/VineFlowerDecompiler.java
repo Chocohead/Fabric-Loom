@@ -24,29 +24,20 @@
 
 package net.fabricmc.loom.decompilers.fernflower;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
+import org.gradle.api.Project;
 
-import org.jetbrains.java.decompiler.util.InterpreterUtil;
+public class VineFlowerDecompiler extends AbstractFernFlowerDecompiler {
+	public VineFlowerDecompiler(Project project) {
+		super(project);
+	}
 
-public class FernFlowerUtils {
-	public static byte[] getBytecode(String externalPath, String internalPath) throws IOException {
-		File file = new File(externalPath);
+	@Override
+	public String name() {
+		return "VineFlower";
+	}
 
-		if (internalPath == null) {
-			return InterpreterUtil.getBytes(file);
-		} else {
-			try (ZipFile archive = new ZipFile(file)) {
-				ZipEntry entry = archive.getEntry(internalPath);
-
-				if (entry == null) {
-					throw new IOException("Entry not found: " + internalPath);
-				}
-
-				return InterpreterUtil.getBytes(archive, entry);
-			}
-		}
+	@Override
+	public Class<? extends AbstractForkedFFExecutor> fernFlowerExecutor() {
+		return FabricForkedFFExecutor.class;
 	}
 }

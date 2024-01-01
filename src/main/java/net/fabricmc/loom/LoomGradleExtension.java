@@ -64,7 +64,7 @@ import org.gradle.api.initialization.dsl.ScriptHandler;
 import org.gradle.api.plugins.BasePluginConvention;
 
 import net.fabricmc.loom.api.decompilers.LoomDecompiler;
-import net.fabricmc.loom.decompilers.fernflower.ForgeFlowerDecompiler;
+import net.fabricmc.loom.decompilers.fernflower.VineFlowerDecompiler;
 import net.fabricmc.loom.dependencies.LoomDependencyManager;
 import net.fabricmc.loom.providers.JarNameFactory;
 import net.fabricmc.loom.providers.JarNamingStrategy;
@@ -168,7 +168,7 @@ public class LoomGradleExtension {
 	 * that uses the specified decompiler instead.
 	 */
 	public void addDecompiler(LoomDecompiler decompiler) {
-		String taskName = decompiler instanceof ForgeFlowerDecompiler ? "genSources" : "genSourcesWith" + decompiler.name();
+		String taskName = decompiler instanceof VineFlowerDecompiler ? "genSources" : "genSourcesWith" + decompiler.name();
 		// decompiler will be passed to the constructor of GenerateSourcesTask
 		project.getTasks().register(taskName, GenerateSourcesTask.class, decompiler);
 	}

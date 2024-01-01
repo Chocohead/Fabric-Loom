@@ -77,7 +77,7 @@ dependencies {
 
 	// decompilers
 	//implementation ('org.benf:cfr:0.151')
-	implementation ('com.github.Chocohead:ForgedFlower:cf0d366')
+	implementation ('com.github.Chocohead:VineFlower:9316a4c')
 
 	// source code remapping
 	implementation ('org.cadixdev:mercury:[0.1.0-rc1]')

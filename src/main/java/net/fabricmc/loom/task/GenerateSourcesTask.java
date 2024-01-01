@@ -30,11 +30,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.Internal;
@@ -52,6 +55,7 @@ public class GenerateSourcesTask extends AbstractLoomTask {
 	private Object output;
 	private Object lineMap;
 	private Object libraries;
+	private final Map<String, Object> decompilerOptions = new HashMap<>();
 	private boolean skipForking;
 
 	@Inject
@@ -97,6 +101,15 @@ public class GenerateSourcesTask extends AbstractLoomTask {
 		this.libraries = libraries;
 	}
 
+	@Input
+	public Map<String, Object> getDecompilerOptions() {
+		return decompilerOptions;
+	}
+
+	public void decompilerOption(String name, Object value) {
+		decompilerOptions.put(name, value);
+	}
+
 	@Internal
 	public boolean isSkipForking() {
 		return skipForking;
@@ -108,10 +121,9 @@ public class GenerateSourcesTask extends AbstractLoomTask {
 
 	@TaskAction
 	public void doTask() throws Throwable {
-		int threads = Runtime.getRuntime().availableProcessors();
 		Path javaDocs = getExtension().getMappingsProvider().getDecompileMappings().toAbsolutePath();
 		Collection<Path> libraries = getLibraries().getFiles().stream().map(File::toPath).collect(Collectors.toSet());
-		DecompilationMetadata metadata = new DecompilationMetadata(threads, !isSkipForking(), javaDocs, libraries);
+		DecompilationMetadata metadata = new DecompilationMetadata(getDecompilerOptions(), !isSkipForking(), javaDocs, libraries);
 
 		Path compiledJar = getInput().toPath();
 		assert Files.exists(compiledJar);

@@ -26,19 +26,37 @@ package net.fabricmc.loom.api.decompilers;
 
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
+
+import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 
 public class DecompilationMetadata {
+	public final Map<String, Object> options;
+	@Deprecated
 	public final int numberOfThreads;
 	public final boolean fork;
 	public final Path javaDocs;
 	public final Collection<Path> libraries;
 
+	@Deprecated
 	public DecompilationMetadata(int numberOfThreads, Path javaDocs, Collection<Path> libraries) {
 		this(numberOfThreads, true, javaDocs, libraries);
 	}
 
+	@Deprecated
 	public DecompilationMetadata(int numberOfThreads, boolean fork, Path javaDocs, Collection<Path> libraries) {
-		this.numberOfThreads = numberOfThreads;
+		this(Collections.singletonMap(IFernflowerPreferences.THREADS, numberOfThreads), fork, javaDocs, libraries);
+	}
+
+	public DecompilationMetadata(Map<String, Object> options, boolean fork, Path javaDocs, Collection<Path> libraries) {
+		this.options = options;
+		Object numberOfThreads = options.get(IFernflowerPreferences.THREADS);
+		if (numberOfThreads instanceof Integer) {
+			this.numberOfThreads = (Integer) numberOfThreads;
+		} else {
+			this.numberOfThreads = Runtime.getRuntime().availableProcessors();
+		}
 		this.fork = fork;
 		this.javaDocs = javaDocs;
 		this.libraries = libraries;

@@ -31,7 +31,6 @@ import java.util.Map;
 import org.jetbrains.java.decompiler.main.Fernflower;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger.Severity;
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.extern.IResultSaver;
 
 import net.fabricmc.fernflower.api.IFabricJavadocProvider;
@@ -47,7 +46,7 @@ public class FabricForkedFFExecutor extends AbstractForkedFFExecutor {
 
 		IResultSaver saver = new ThreadSafeResultSaver(() -> output, () -> lineMap);
 		IFernflowerLogger logger = new ThreadIDFFLogger(System.out, System.err, false);
-		Fernflower ff = new Fernflower(FernFlowerUtils::getBytecode, saver, options, logger, getThreads(options));
+		Fernflower ff = new Fernflower(saver, options, logger);
 
 		for (File library : libraries) {
 			ff.addLibrary(library);
@@ -55,22 +54,10 @@ public class FabricForkedFFExecutor extends AbstractForkedFFExecutor {
 
 		ff.addSource(input);
 		logger.writeMessage("Decompiling jar...", Severity.INFO);
-		ff.decompileContext();
-	}
-
-	private int getThreads(Map<String, Object> options) {
-		Object threads = options.get(IFernflowerPreferences.THREADS);
-
-		if (threads instanceof String) {
-			try {
-				return Integer.parseInt((String) threads);
-			} catch (NumberFormatException e) {
-				System.err.println("Invalid number of threads specified: " + threads);
-			}
-		} else if (threads instanceof Number) {
-			return ((Number) threads).intValue();
+		try {
+			ff.decompileContext();
+		} finally {
+			ff.clearContext();
 		}
-
-		return 0;
 	}
 }

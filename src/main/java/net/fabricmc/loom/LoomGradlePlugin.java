@@ -35,7 +35,7 @@ import org.gradle.api.plugins.ExtraPropertiesExtension;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 
-import net.fabricmc.loom.decompilers.fernflower.ForgeFlowerDecompiler;
+import net.fabricmc.loom.decompilers.fernflower.VineFlowerDecompiler;
 import net.fabricmc.loom.providers.MinecraftLibraryProvider;
 import net.fabricmc.loom.providers.MinecraftMappedProvider;
 import net.fabricmc.loom.task.CleanLoomBinaries;
@@ -147,7 +147,7 @@ public class LoomGradlePlugin extends AbstractPlugin {
 		});
 
 		LoomGradleExtension extension = project.getExtensions().getByType(LoomGradleExtension.class);
-		extension.addDecompiler(new ForgeFlowerDecompiler(project));
+		extension.addDecompiler(new VineFlowerDecompiler(project));
 	}
 
 	/**
